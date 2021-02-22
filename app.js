@@ -7,6 +7,9 @@ const mongoose = require("mongoose");
 const session = require('express-session');
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const findOrCreate = require('mongoose-findorcreate');
+
 
 const app = express();
 
@@ -36,11 +39,15 @@ mongoose.set('useCreateIndex', true); //for DeprecationWarning: collection.ensur
 // schema
 const userSchema = new mongoose.Schema({
     email: String,
-    password: String 
+    password: String,
+    googleId: String
 });
 
 // init passport local mongoose
 userSchema.plugin(passportLocalMongoose);
+
+// plugin for mongoose findOrCreate
+userSchema.plugin(findOrCreate);
 
 // model using userSchema
 const User = new mongoose.model("User",userSchema);
@@ -48,8 +55,30 @@ const User = new mongoose.model("User",userSchema);
 // passport local mongoose config
 passport.use(User.createStrategy());
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, done) {
+    done(null, user.id);
+});
+  
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function(err, user) {
+      done(err, user);
+    });
+});
+
+
+// google passport strategy use
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets"
+},
+function(accessToken, refreshToken, profile, cb) {
+    // console.log(profile); //logging the profile sent by google
+    User.findOrCreate({ googleId: profile.id }, (err, user)=>{
+      return cb(err, user);
+    });
+  }
+));
 
 //get requests
 
@@ -57,6 +86,18 @@ app.get("/",(req,res)=>{
     res.render("home");
 });
 
+// google authentication using passport and oauth2.0
+app.get('/auth/google', passport.authenticate('google', {
+    scope: ['https://www.googleapis.com/auth/plus.login']
+}));
+
+app.get('/auth/google/secrets', 
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    res.redirect('/secrets');
+  });
+
+// login get req
 app.get("/login",(req,res)=>{
     res.render("login");
 });
@@ -112,9 +153,6 @@ app.post("/login",(req,res)=>{
     });
 
 });
-
-
-
 
 // app listener
 app.listen(3000, () => {

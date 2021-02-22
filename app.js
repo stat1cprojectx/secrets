@@ -40,7 +40,8 @@ mongoose.set('useCreateIndex', true); //for DeprecationWarning: collection.ensur
 const userSchema = new mongoose.Schema({
     email: String,
     password: String,
-    googleId: String
+    googleId: String,
+    secret: String
 });
 
 // init passport local mongoose
@@ -67,20 +68,22 @@ passport.deserializeUser(function(id, done) {
 
 
 // google passport strategy use
-passport.use(new GoogleStrategy({
-    clientID: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-    callbackURL: "http://localhost:3000/auth/google/secrets"
-},
-function(accessToken, refreshToken, profile, cb) {
+passport.use(new GoogleStrategy(
+    {
+        clientID: process.env.CLIENT_ID,
+        clientSecret: process.env.CLIENT_SECRET,
+        callbackURL: "http://localhost:3000/auth/google/secrets"
+    },
+    function(accessToken, refreshToken, profile, cb)
+    {
     // console.log(profile); //logging the profile sent by google
     User.findOrCreate({ googleId: profile.id }, (err, user)=>{
-      return cb(err, user);
-    });
-  }
+            return cb(err, user);
+        });
+    }
 ));
 
-//get requests
+///////////////////////////////////////////get requests
 
 app.get("/",(req,res)=>{
     res.render("home");
@@ -107,11 +110,20 @@ app.get("/register",(req,res)=>{
 });
 
 app.get("/secrets",(req,res)=>{
-    if (req.isAuthenticated()) {
-        res.render('secrets');
-    } else {
-        res.redirect("/login");
-    }
+    // if (req.isAuthenticated()) {
+    //     res.render('secrets');
+    // } else {
+    //     res.redirect("/login");
+    // }
+    User.find({ "secret": {$ne:null} }, (err,foundUsers)=>{
+        if (err) {
+            console.log(err);
+        } else {
+            if (foundUsers) {
+                res.render('secrets', {usersWithSecrets: foundUsers});
+            }
+        }
+    });
 });
 
 app.get("/logout", (req,res)=>{
@@ -119,7 +131,16 @@ app.get("/logout", (req,res)=>{
     res.redirect("/");
 });
 
-// post requests
+app.get('/submit', (req,res)=>{
+    if (req.isAuthenticated()) {
+        res.render('submit');
+    } else {
+        res.redirect("/login");
+    }
+});
+
+
+///////////////////////////////////////// post requests
 
 app.post("/register",(req,res)=>{
     User.register({username: req.body.username}, req.body.password, (err, user)=>{
@@ -151,7 +172,23 @@ app.post("/login",(req,res)=>{
             });
         }
     });
+});
 
+app.post('/submit',(req,res)=>{
+    const submittedSecret = req.body.secret;
+    // console.log(req.user.id); //user session current id log
+    User.findById(req.user.id, (err,foundUser)=>{
+        if (err) {
+            console.log(err);
+        } else {
+            if (foundUser){
+                foundUser.secret = submittedSecret;
+                foundUser.save(()=>{
+                    res.redirect('/secrets');
+                });
+            }
+        }
+    });
 });
 
 // app listener
